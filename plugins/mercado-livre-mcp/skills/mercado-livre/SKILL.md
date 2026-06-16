@@ -12,6 +12,7 @@ Use the bundled Mercado Livre MCP tools for read-only API inspection.
 - If the user is setting up the plugin, call `meli_setup_status` first.
 - If credentials are missing, call `meli_auth_connect` for guided OAuth setup.
 - Do not ask the user to paste secrets into chat unless the MCP client cannot use elicitation; prefer the auth form opened by `meli_auth_connect`.
+- If the user asks about the Mercado Livre app setup, tell them to enable PKCE and use the exact valid HTTPS redirect URI configured in the app. The plugin sends `code_challenge_method=S256`.
 - Explain that Mercado Livre refresh tokens are single-use and the plugin persists each rotated refresh token locally.
 - Ask for exact IDs before calling data tools: seller/user id, item id, user product id, site id such as `MLB`, advertiser id, campaign id, and date range as `YYYY-MM-DD`.
 

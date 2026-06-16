@@ -38,6 +38,8 @@ Check if Mercado Livre is configured. If not, connect it.
 
 Codex should call `meli_setup_status`, then `meli_auth_connect`. The OAuth setup opens Mercado Livre, exchanges the authorization code, stores tokens locally, and automatically persists Mercado Livre's rotated refresh token on each refresh.
 
+For the Mercado Livre developer app, enable PKCE if the console offers that setting. The plugin sends `code_challenge_method=S256` during authorization. Use the exact valid HTTPS redirect URI configured in the app when `meli_auth_connect` asks for `redirect_uri`.
+
 Admins can also configure the bundled MCP server with environment variables. Prefer:
 
 ```text

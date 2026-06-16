@@ -1,6 +1,6 @@
 {
   "name": "mercado-livre-mcp",
-  "version": "0.1.0+codex.20260616141224",
+  "version": "0.1.0+codex.20260616163621",
   "description": "Read-only Mercado Livre API access for Codex through a bundled MCP server.",
   "author": {
     "name": "Internal Tools"

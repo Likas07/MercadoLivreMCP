@@ -70,6 +70,8 @@ Codex should call:
 
 The OAuth flow asks for the Mercado Livre app credentials, opens the Mercado Livre authorization URL, exchanges the authorization code, and stores tokens locally. After that, the plugin automatically refreshes access tokens and persists Mercado Livre's rotated refresh token.
 
+In the Mercado Livre developer app, enable PKCE if the console offers that setting. Use the exact valid HTTPS redirect URI configured in that app when Codex asks for `redirect_uri`. A static callback page is enough because the user copies the full redirected URL back into Codex.
+
 ## Normal Use
 
 Example prompts:

@@ -15,6 +15,8 @@ This Codex plugin bundles a read-only Mercado Livre MCP server.
 
 Ask Codex to connect Mercado Livre. The plugin will guide you through OAuth, store the tokens locally, and keep the refresh token updated when Mercado Livre rotates it.
 
+In the Mercado Livre developer app, enable PKCE if the console offers that setting. Use the exact valid HTTPS redirect URI configured in the app when Codex asks for `redirect_uri`.
+
 Admins can configure either:
 
 - `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET`, and `MELI_REFRESH_TOKEN`

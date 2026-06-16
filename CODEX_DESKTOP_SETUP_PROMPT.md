@@ -166,6 +166,8 @@ When `meli_auth_connect` runs:
 
 - Use the form opened by Codex for Mercado Livre app credentials.
 - Ask for the Mercado Livre app `client_id`, `client_secret`, and exact `redirect_uri`.
+- Tell the user the Mercado Livre app should have PKCE enabled because this plugin sends `code_challenge_method=S256`.
+- The `redirect_uri` must be the exact valid HTTPS URL configured in the Mercado Livre developer app. A static callback page is enough as long as Mercado Livre can redirect the browser there and the user can copy the full redirected URL back into Codex.
 - Do not ask for access tokens or refresh tokens in chat.
 - The plugin will store tokens locally and automatically persist each rotated Mercado Livre refresh token.
 
