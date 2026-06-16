@@ -1,0 +1,36 @@
+{
+  "name": "mercado-livre-mcp",
+  "version": "0.1.0+codex.20260616141224",
+  "description": "Read-only Mercado Livre API access for Codex through a bundled MCP server.",
+  "author": {
+    "name": "Internal Tools"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mercado-livre",
+    "mercadolivre",
+    "mercadolibre",
+    "mcp",
+    "seller-reputation",
+    "product-ads"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Mercado Livre MCP",
+    "shortDescription": "Inspect Mercado Livre seller, listing, quality, and ads data.",
+    "longDescription": "Mercado Livre MCP gives Codex read-only access to Mercado Livre API data through a bundled MCP server. It helps non-technical users inspect seller reputation, listing quality, purchase experience, catalog attribute completeness, Product Ads metrics, item search, listing exposure, and product metadata using natural-language prompts.",
+    "developerName": "Internal Tools",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Check if Mercado Livre is configured",
+      "Review listing quality for this item",
+      "Summarize Product Ads metrics"
+    ],
+    "brandColor": "#FFE600"
+  }
+}

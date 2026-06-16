@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "mercado-livre": {
+      "cwd": ".",
+      "command": "node",
+      "args": [
+        "./server/index.mjs"
+      ],
+      "env_vars": [
+        "MELI_ACCESS_TOKEN",
+        "MELI_CLIENT_ID",
+        "MELI_CLIENT_SECRET",
+        "MELI_REFRESH_TOKEN",
+        "MELI_API_BASE_URL",
+        "MELI_TIMEOUT_MS",
+        "MELI_USER_AGENT",
+        "MELI_AUTH_BASE_URL",
+        "MELI_TOKEN_STORE_PATH",
+        "MERCADO_LIVRE_ACCESS_TOKEN",
+        "MERCADO_LIVRE_CLIENT_ID",
+        "MERCADO_LIVRE_CLIENT_SECRET",
+        "MERCADO_LIVRE_REFRESH_TOKEN"
+      ],
+      "startup_timeout_sec": 10,
+      "tool_timeout_sec": 60
+    }
+  }
+}

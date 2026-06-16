@@ -1,0 +1,20 @@
+{
+  "name": "mercado-livre-local",
+  "interface": {
+    "displayName": "Mercado Livre Local"
+  },
+  "plugins": [
+    {
+      "name": "mercado-livre-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mercado-livre-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

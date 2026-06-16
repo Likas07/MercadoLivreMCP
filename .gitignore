@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.npmrc
+auth.json
+*.local.json
+*.log
+*.tgz
+node_modules/
+dist/
+coverage/
+.DS_Store

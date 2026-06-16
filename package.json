@@ -1,0 +1,42 @@
+{
+  "name": "mercadolivre-mcp-server",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for Mercado Livre API data.",
+  "type": "module",
+  "bin": {
+    "mercadolivre-mcp": "dist/index.js"
+  },
+  "files": [
+    ".agents/plugins/marketplace.json",
+    "dist",
+    "plugins",
+    "scripts",
+    "src",
+    "README.md",
+    "WINDOWS_SETUP.md",
+    "CODEX_DESKTOP_SETUP_PROMPT.md",
+    ".env.example",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "build": "tsc && npm run build:plugin",
+    "build:plugin": "node scripts/build-plugin.mjs",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  },
+  "license": "MIT"
+}
