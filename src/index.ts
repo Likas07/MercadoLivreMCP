@@ -3,10 +3,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import {
+  AuthGenerationGuard,
+  createOAuthAuthorizationRequest,
+  resolveElicitationTimeoutMs,
+  validateAuthorizationRedirect
+} from "./oauth-security.js";
 
 const DEFAULT_API_BASE_URL = "https://api.mercadolibre.com";
 const DEFAULT_AUTH_BASE_URL = "https://auth.mercadolivre.com.br";
@@ -82,6 +87,9 @@ class TokenProvider {
   private expiresAtMs = 0;
   private refreshToken?: string;
   private storedAuth: StoredAuth = {};
+  private readonly authGeneration = new AuthGenerationGuard();
+  private authMutation: Promise<void> = Promise.resolve();
+  private refreshPromise?: Promise<void>;
 
   constructor(private readonly env: NodeJS.ProcessEnv) {
     this.accessToken = env.MELI_ACCESS_TOKEN || env.MERCADO_LIVRE_ACCESS_TOKEN;
@@ -112,7 +120,7 @@ class TokenProvider {
     }
 
     if (this.canRefresh()) {
-      await this.refresh();
+      await this.refreshOnce();
       if (this.accessToken) {
         return this.accessToken;
       }
@@ -135,7 +143,20 @@ class TokenProvider {
     return this.env.MELI_CLIENT_SECRET || this.env.MERCADO_LIVRE_CLIENT_SECRET || this.storedAuth.client_secret;
   }
 
+  private async refreshOnce(): Promise<void> {
+    const refreshPromise = this.refreshPromise ?? this.refresh();
+    this.refreshPromise = refreshPromise;
+    try {
+      await refreshPromise;
+    } finally {
+      if (this.refreshPromise === refreshPromise) {
+        this.refreshPromise = undefined;
+      }
+    }
+  }
+
   private async refresh(): Promise<void> {
+    const authGeneration = this.captureAuthGeneration();
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       client_id: this.clientId!,
@@ -165,28 +186,75 @@ class TokenProvider {
     }
 
     const token = tokenRefreshResponseSchema.parse(data);
-    await this.setToken(token);
+    await this.setToken(token, {}, authGeneration);
   }
 
-  async setToken(token: z.infer<typeof tokenRefreshResponseSchema>, auth: Partial<StoredAuth> = {}): Promise<void> {
-    this.accessToken = token.access_token;
-    this.refreshToken = token.refresh_token ?? this.refreshToken;
-    this.expiresAtMs = Date.now() + token.expires_in * 1000;
+  captureAuthGeneration(): number {
+    return this.authGeneration.capture();
+  }
 
-    const nextAuth: StoredAuth = {
-      ...this.storedAuth,
-      ...auth,
-      access_token: this.accessToken,
-      refresh_token: this.refreshToken,
-      expires_at_ms: this.expiresAtMs,
-      token_type: token.token_type,
-      scope: token.scope,
-      user_id: token.user_id,
-      updated_at: new Date().toISOString()
-    };
+  async setToken(
+    token: z.infer<typeof tokenRefreshResponseSchema>,
+    auth: Partial<StoredAuth>,
+    authGeneration: number
+  ): Promise<void> {
+    await this.serializeAuthMutation(async () => {
+      if (!this.authGeneration.isCurrent(authGeneration)) {
+        throw new Error("OAuth credentials changed while the request was in progress. Retry the operation.");
+      }
 
-    await writeStoredAuth(nextAuth);
-    this.storedAuth = nextAuth;
+      const accessToken = token.access_token;
+      const refreshToken = token.refresh_token ?? this.refreshToken;
+      const expiresAtMs = Date.now() + token.expires_in * 1000;
+      const nextAuth: StoredAuth = {
+        ...this.storedAuth,
+        ...auth,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at_ms: expiresAtMs,
+        token_type: token.token_type,
+        scope: token.scope,
+        user_id: token.user_id,
+        updated_at: new Date().toISOString()
+      };
+
+      await writeStoredAuth(nextAuth);
+      this.accessToken = accessToken;
+      this.refreshToken = refreshToken;
+      this.expiresAtMs = expiresAtMs;
+      this.storedAuth = nextAuth;
+    });
+  }
+
+  async clearStoredAuth(): Promise<void> {
+    this.authGeneration.invalidate();
+    this.resetToEnvironmentAuth();
+    await this.serializeAuthMutation(async () => {
+      await rm(tokenStorePath(), { force: true });
+      this.resetToEnvironmentAuth();
+    });
+  }
+
+  private resetToEnvironmentAuth(): void {
+    this.storedAuth = {};
+    this.accessToken = this.env.MELI_ACCESS_TOKEN || this.env.MERCADO_LIVRE_ACCESS_TOKEN;
+    this.refreshToken = this.env.MELI_REFRESH_TOKEN || this.env.MERCADO_LIVRE_REFRESH_TOKEN;
+    this.expiresAtMs = this.accessToken ? Number.POSITIVE_INFINITY : 0;
+  }
+
+  private async serializeAuthMutation(operation: () => Promise<void>): Promise<void> {
+    const previousMutation = this.authMutation;
+    let releaseMutation!: () => void;
+    this.authMutation = new Promise<void>((resolve) => {
+      releaseMutation = resolve;
+    });
+
+    await previousMutation;
+    try {
+      await operation();
+    } finally {
+      releaseMutation();
+    }
   }
 
   setupStatus(): Record<string, unknown> {
@@ -215,9 +283,7 @@ class TokenProvider {
         persisted_token_store: persisted
       },
       missing,
-      token_store_path: tokenStorePath(),
       token_expires_at: Number.isFinite(this.expiresAtMs) && this.expiresAtMs > 0 ? new Date(this.expiresAtMs).toISOString() : null,
-      user_id: this.storedAuth.user_id ?? null,
       recommended_setup:
         "Run meli_auth_connect once. The plugin stores OAuth tokens locally and automatically persists Mercado Livre's rotated refresh_token after every refresh.",
       api_base_url: apiBaseUrl(),
@@ -355,11 +421,8 @@ registerTool(
     inputSchema: {}
   },
   async () => {
-    await rm(tokenStorePath(), { force: true });
-    return {
-      disconnected: true,
-      token_store_path: tokenStorePath()
-    };
+    await tokenProvider.clearStoredAuth();
+    return { disconnected: true };
   }
 );
 
@@ -978,7 +1041,12 @@ function userAgent(): string {
   return process.env.MELI_USER_AGENT || "mercadolivre-mcp-server/0.1.0";
 }
 
+function elicitationRequestOptions(): { timeout: number } {
+  return { timeout: resolveElicitationTimeoutMs(process.env.MELI_ELICITATION_TIMEOUT_MS) };
+}
+
 async function runInteractiveOAuthConnect(): Promise<Record<string, unknown>> {
+  const authGeneration = tokenProvider.captureAuthGeneration();
   const credentials = await server.server.elicitInput({
     mode: "form",
     message:
@@ -1011,7 +1079,7 @@ async function runInteractiveOAuthConnect(): Promise<Record<string, unknown>> {
       },
       required: ["client_id", "client_secret", "redirect_uri"]
     }
-  });
+  }, elicitationRequestOptions());
 
   if (credentials.action !== "accept") {
     return { connected: false, reason: "OAuth setup was cancelled." };
@@ -1021,10 +1089,11 @@ async function runInteractiveOAuthConnect(): Promise<Record<string, unknown>> {
   const clientSecret = nonEmptyString(credentials.content?.client_secret, "client_secret");
   const redirectUri = nonEmptyString(credentials.content?.redirect_uri, "redirect_uri");
   const authBase = nonEmptyString(credentials.content?.auth_base_url ?? authBaseUrl(), "auth_base_url");
-  const verifier = base64Url(crypto.randomBytes(32));
-  const challenge = base64Url(crypto.createHash("sha256").update(verifier).digest());
-  const state = base64Url(crypto.randomBytes(16));
-  const authorizationUrl = buildAuthorizationUrl(authBase, clientId, redirectUri, challenge, state);
+  const { authorizationUrl, codeVerifier, state } = createOAuthAuthorizationRequest({
+    authBase,
+    clientId,
+    redirectUri
+  });
 
   try {
     await server.server.elicitInput({
@@ -1032,56 +1101,59 @@ async function runInteractiveOAuthConnect(): Promise<Record<string, unknown>> {
       elicitationId: `meli-oauth-${Date.now()}`,
       message: "Sign in to Mercado Livre and authorize this app. Return here after the browser redirects.",
       url: authorizationUrl
-    });
+    }, elicitationRequestOptions());
   } catch {
     // Some MCP clients do not support URL elicitation. The next form includes the URL.
   }
 
   const codeResult = await server.server.elicitInput({
     mode: "form",
-    message: `After authorizing Mercado Livre, paste the full redirected URL or just the code parameter. Authorization URL: ${authorizationUrl}`,
+    message: `After authorizing Mercado Livre, paste the full redirected URL. Bare authorization codes are rejected. Authorization URL: ${authorizationUrl}`,
     requestedSchema: {
       type: "object",
       properties: {
         redirected_url_or_code: {
           type: "string",
-          title: "Redirected URL or code",
+          title: "Full redirected URL",
           minLength: 1
         }
       },
       required: ["redirected_url_or_code"]
     }
-  });
+  }, elicitationRequestOptions());
 
   if (codeResult.action !== "accept") {
     return { connected: false, reason: "Authorization code entry was cancelled." };
   }
 
-  const parsed = parseAuthorizationCode(nonEmptyString(codeResult.content?.redirected_url_or_code, "redirected_url_or_code"));
-  if (parsed.state && parsed.state !== state) {
-    throw new Error("Mercado Livre OAuth state did not match. Restart meli_auth_connect.");
-  }
+  const { code } = validateAuthorizationRedirect(
+    nonEmptyString(codeResult.content?.redirected_url_or_code, "redirected_url_or_code"),
+    state,
+    redirectUri
+  );
 
   const token = await exchangeAuthorizationCode({
     clientId,
     clientSecret,
     redirectUri,
-    code: parsed.code,
-    codeVerifier: verifier
+    code,
+    codeVerifier
   });
 
-  await tokenProvider.setToken(token, {
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri
-  });
+  await tokenProvider.setToken(
+    token,
+    {
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri
+    },
+    authGeneration
+  );
 
   return {
     connected: true,
     auth_mode: "stored_oauth",
-    user_id: token.user_id ?? null,
     token_expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString(),
-    token_store_path: tokenStorePath(),
     note: "Mercado Livre refresh tokens are single-use. This plugin will persist the new refresh_token after every automatic refresh."
   };
 }
@@ -1125,33 +1197,6 @@ async function exchangeAuthorizationCode(input: {
   return tokenRefreshResponseSchema.parse(data);
 }
 
-function buildAuthorizationUrl(authBase: string, clientId: string, redirectUri: string, challenge: string, state: string): string {
-  const url = new URL("/authorization", authBase);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("code_challenge", challenge);
-  url.searchParams.set("code_challenge_method", "S256");
-  return url.toString();
-}
-
-function parseAuthorizationCode(value: string): { code: string; state?: string } {
-  try {
-    const url = new URL(value);
-    const code = url.searchParams.get("code");
-    if (!code) {
-      throw new Error("Missing code query parameter.");
-    }
-    return {
-      code,
-      state: url.searchParams.get("state") ?? undefined
-    };
-  } catch {
-    return { code: value.trim() };
-  }
-}
-
 async function readStoredAuth(): Promise<StoredAuth> {
   try {
     const raw = await readFile(tokenStorePath(), "utf8");
@@ -1186,10 +1231,6 @@ function tokenStorePath(): string {
 
 function authBaseUrl(): string {
   return process.env.MELI_AUTH_BASE_URL || DEFAULT_AUTH_BASE_URL;
-}
-
-function base64Url(input: Buffer): string {
-  return input.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function nonEmptyString(value: unknown, name: string): string {
